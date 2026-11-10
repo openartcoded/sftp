@@ -132,6 +132,45 @@ ssh-keygen -t ed25519 -f ssh_host_ed25519_key < /dev/null
 ssh-keygen -t rsa -b 4096 -f ssh_host_rsa_key < /dev/null
 ```
 
+## Brute force protection (fail2ban)
+
+The image ships with [fail2ban](https://github.com/fail2ban/fail2ban). It
+watches sshd's log and bans IP addresses with too many failed logins, using
+nftables inside the container. Managing the container firewall requires the
+`NET_ADMIN` capability:
+
+```
+docker run --cap-add=NET_ADMIN -p 2222:22 -d atmoz/sftp foo:pass:::upload
+```
+
+Without `NET_ADMIN`, the container logs a warning and runs exactly as before,
+without fail2ban.
+
+Bans and unbans are written to `docker logs`. To inspect or lift a ban:
+
+```
+docker exec <container> fail2ban-client status sshd
+docker exec <container> fail2ban-client set sshd unbanip 203.0.113.7
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `FAIL2BAN` | `auto` | `auto`: enable if possible; `true`: refuse to start without it; `false`: disable |
+| `FAIL2BAN_MAXRETRY` | `5` | Failures allowed within `FAIL2BAN_FINDTIME` |
+| `FAIL2BAN_FINDTIME` | `10m` | Time window for counting failures |
+| `FAIL2BAN_BANTIME` | `1h` | First ban duration, doubled for repeat offenders |
+| `FAIL2BAN_BANTIME_MAXTIME` | `1w` | Maximum ban duration |
+| `FAIL2BAN_IGNOREIP` | | Extra IPs/CIDRs never banned (space or comma separated) |
+| `FAIL2BAN_IGNORE_GATEWAY` | `true` | Never ban the container's default gateway |
+
+**Note on client IP addresses:** fail2ban can only ban what sshd sees. With a
+standard Docker bridge network and IPv4, sshd sees the real client address.
+Connections that go through `docker-proxy` (localhost, IPv6, hairpin) or
+rootless/slirp networking appear to come from the gateway. The gateway is never
+banned by default, because that would lock out everyone. For the best
+protection, use `--network=host` or make sure the real client IP reaches the
+container.
+
 ## Execute custom scripts or applications
 
 Put your programs in `/etc/sftp.d/` and it will automatically run when the container starts.

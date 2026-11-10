@@ -380,6 +380,55 @@ function testDuplicateSshKeys() {
     assertEquals "1" "$lines"
 }
 
+function testFail2banSkippedWithoutNetAdmin() {
+    container run --name "$containerName" "${runArgs[@]}" -d \
+        "$imageName" "user:" \
+        > "$redirect" 2>&1
+
+    waitForServer "$containerName"
+    assertTrue "waitForServer" $?
+
+    container logs "$containerName" 2>&1 | grep -q "fail2ban disabled"
+    assertTrue "fail2ban skipped without NET_ADMIN" $?
+}
+
+function testFail2banRequiredWithoutNetAdmin() {
+    container run --name "$containerName" "${runArgs[@]}" \
+        -e FAIL2BAN=true \
+        "$imageName" "user:" \
+        > "$redirect" 2>&1
+    assertEquals "refuses to start" 4 $?
+}
+
+function testFail2banBansBruteForce() {
+    # The test client connects through the container gateway, so it must not
+    # be ignored for this test
+    container run --name "$containerName" "${runArgs[@]}" -d \
+        --cap-add=NET_ADMIN \
+        -e FAIL2BAN=true \
+        -e FAIL2BAN_MAXRETRY=2 \
+        -e FAIL2BAN_IGNORE_GATEWAY=false \
+        -v "$sshKeyPub":/home/test/.ssh/keys/id_rsa.pub:ro \
+        "$imageName" "test:" \
+        > "$redirect" 2>&1
+
+    waitForServer "$containerName"
+    assertTrue "waitForServer" $?
+
+    port="$(getSftpPort "$containerName")"
+    for _ in 1 2 3; do
+        ssh -i "$sshKeyPri" -p "$port" \
+            -oBatchMode=yes -oConnectTimeout=3 \
+            -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null \
+            "invalid-user@127.0.0.1" true > "$redirect" 2>&1
+    done
+    sleep 3 # fail2ban polls the log file
+
+    container exec "$containerName" fail2ban-client status sshd \
+        | grep -q "Total banned:[[:space:]]*1"
+    assertTrue "attacker banned" $?
+}
+
 ##############################################################################
 ## Run
 ##############################################################################

@@ -1,0 +1,9 @@
+[Definition]
+# The entrypoint starts fail2ban-server with `--logtarget STDERR`, so bans
+# show up in `docker logs` next to the sshd messages.
+loglevel = INFO
+allowipv6 = auto
+socket = /run/fail2ban/fail2ban.sock
+pidfile = /run/fail2ban/fail2ban.pid
+dbfile = /var/lib/fail2ban/fail2ban.sqlite3
+dbpurgeage = 7d

@@ -1,0 +1,36 @@
+# Fail2ban configuration for the sftp container.
+#
+# sshd runs in the foreground and logs to stderr (`docker logs`). The
+# entrypoint mirrors those lines, prefixed with a timestamp, to
+# /var/log/sftp/sshd.log, which is the file watched here.
+#
+# Runtime overrides (FAIL2BAN_* environment variables) are written by the
+# entrypoint to /etc/fail2ban/jail.d/zz-runtime.local, which takes precedence.
+
+[DEFAULT]
+# Bans are applied with nftables inside the container's network namespace and
+# block every port. Requires the NET_ADMIN capability (`--cap-add=NET_ADMIN`).
+banaction = nftables-allports
+banaction_allports = nftables-allports
+
+# No systemd / pyinotify inside the container
+backend = polling
+
+# Never ban loopback. The entrypoint appends the container's default gateway
+# (see FAIL2BAN_IGNORE_GATEWAY) and FAIL2BAN_IGNOREIP.
+ignoreip = 127.0.0.1/8 ::1
+
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+
+# Repeat offenders get exponentially longer bans, capped at one week
+bantime.increment = true
+bantime.factor = 1
+bantime.maxtime = 1w
+
+[sshd]
+enabled  = true
+filter   = sshd[mode=normal]
+logpath  = /var/log/sftp/sshd.log
+backend  = polling
